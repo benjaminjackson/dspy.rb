@@ -38,17 +38,8 @@ module DSPy
           # OpenAI/Ollama: try to extract JSON from various formats
           extract_json_from_content(response.content)
         elsif adapter_class_name.include?('AnthropicAdapter')
-          # Anthropic: try tool use first if structured_outputs enabled, else use content extraction
-          structured_outputs_enabled = adapter.instance_variable_get(:@structured_outputs_enabled)
-          structured_outputs_enabled = true if structured_outputs_enabled.nil?  # Default to true
-
-          if structured_outputs_enabled
-            extracted = extract_anthropic_tool_json(response)
-            extracted || extract_json_from_content(response.content)
-          else
-            # Skip tool extraction, use enhanced prompting extraction
-            extract_json_from_content(response.content)
-          end
+          # Anthropic: Beta API returns JSON in content, same as OpenAI/Gemini
+          extract_json_from_content(response.content)
         elsif adapter_class_name.include?('GeminiAdapter')
           # Gemini: try to extract JSON from various formats
           extract_json_from_content(response.content)
@@ -90,25 +81,30 @@ module DSPy
       # Anthropic preparation
       sig { params(messages: T::Array[T::Hash[Symbol, T.untyped]], request_params: T::Hash[Symbol, T.untyped]).void }
       def prepare_anthropic_request(messages, request_params)
-        # Only use tool-based extraction if structured_outputs is enabled (default: true)
-        structured_outputs_enabled = adapter.instance_variable_get(:@structured_outputs_enabled)
+        begin
+          require "dspy/anthropic/lm/schema_converter"
+        rescue LoadError
+          msg = <<~MSG
+            Anthropic adapter is optional; structured output helpers will be unavailable until the gem is installed.
+            Add `gem 'dspy-anthropic'` to your Gemfile and run `bundle install`.
+          MSG
+          raise DSPy::LM::MissingAdapterError, msg
+        end
 
-        # Default to true if not set (backward compatibility)
+        # Only use Beta API structured outputs if enabled (default: true)
+        structured_outputs_enabled = adapter.instance_variable_get(:@structured_outputs_enabled)
         structured_outputs_enabled = true if structured_outputs_enabled.nil?
 
         return unless structured_outputs_enabled
 
-        # Convert signature to tool schema
-        tool_schema = convert_to_anthropic_tool_schema
+        # Use Anthropic Beta API structured outputs
+        schema = DSPy::Anthropic::LM::SchemaConverter.to_beta_format(signature_class)
 
-        # Add tool definition
-        request_params[:tools] = [tool_schema]
-
-        # Force tool use
-        request_params[:tool_choice] = {
-          type: "tool",
-          name: "json_output"
-        }
+        request_params[:output_format] = Anthropic::Models::Beta::BetaJSONOutputFormat.new(
+          type: :json_schema,
+          schema: schema
+        )
+        request_params[:betas] = ["structured-outputs-2025-11-13"]
       end
 
       # Gemini preparation
@@ -133,49 +129,6 @@ module DSPy
             response_json_schema: schema
           }
         end
-      end
-
-      # Convert signature to Anthropic tool schema
-      sig { returns(T::Hash[Symbol, T.untyped]) }
-      def convert_to_anthropic_tool_schema
-        output_fields = signature_class.output_field_descriptors
-
-        {
-          name: "json_output",
-          description: "Output the result in the required JSON format",
-          input_schema: {
-            type: "object",
-            properties: build_properties_from_fields(output_fields),
-            required: output_fields.keys.map(&:to_s)
-          }
-        }
-      end
-
-      # Build JSON schema properties from output fields
-      sig { params(fields: T::Hash[Symbol, T.untyped]).returns(T::Hash[String, T.untyped]) }
-      def build_properties_from_fields(fields)
-        properties = {}
-        fields.each do |field_name, descriptor|
-          properties[field_name.to_s] = DSPy::TypeSystem::SorbetJsonSchema.type_to_json_schema(descriptor.type)
-        end
-        properties
-      end
-
-      # Extract JSON from Anthropic tool use response
-      sig { params(response: DSPy::LM::Response).returns(T.nilable(String)) }
-      def extract_anthropic_tool_json(response)
-        # Check for tool calls in metadata
-        if response.metadata.respond_to?(:tool_calls) && response.metadata.tool_calls
-          tool_calls = response.metadata.tool_calls
-          if tool_calls.is_a?(Array) && !tool_calls.empty?
-            first_call = tool_calls.first
-            if first_call[:name] == "json_output" && first_call[:input]
-              return JSON.generate(first_call[:input])
-            end
-          end
-        end
-
-        nil
       end
 
       # Extract JSON from content that may contain markdown or plain JSON
