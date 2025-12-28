@@ -1,3 +1,11 @@
+GIT
+  remote: https://github.com/benjaminjackson/anthropic-sdk-ruby
+  revision: e99a9dc6258ff3bedf81f34ee2d05951ba1e8596
+  ref: e99a9dc6258ff3bedf81f34ee2d05951ba1e8596
+  specs:
+    anthropic (1.16.2)
+      connection_pool
+
 PATH
   remote: .
   specs:
@@ -13,7 +21,7 @@ PATH
       sorbet-schema (~> 0.3)
       sorbet-toon (~> 0.1)
     dspy-anthropic (1.0.1)
-      anthropic
+      anthropic (>= 1.16.2)
       dspy (>= 0.30)
     dspy-datasets (1.0.1)
       dspy (>= 0.30)
@@ -58,8 +66,6 @@ GEM
   specs:
     addressable (2.8.7)
       public_suffix (>= 2.0.2, < 7.0)
-    anthropic (1.15.1)
-      connection_pool
     aruba (2.3.2)
       bundler (>= 1.17, < 3.0)
       contracts (>= 0.16.0, < 0.18.0)
@@ -79,7 +85,7 @@ GEM
     chronic (0.10.2)
     cli-ui (2.6.0)
     concurrent-ruby (1.3.5)
-    connection_pool (2.5.4)
+    connection_pool (2.5.5)
     console (1.34.0)
       fiber-annotation
       fiber-local (~> 1.1)
@@ -367,6 +373,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  anthropic!
   aruba (~> 2.3)
   byebug (~> 11.1)
   cli-ui (~> 2.6)

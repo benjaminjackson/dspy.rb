@@ -25,7 +25,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "dspy", ">= 0.30"
-  spec.add_dependency "anthropic"
+  spec.add_dependency "anthropic", ">= 1.16.2"
 
   spec.metadata["github_repo"] = "git@github.com:vicentereig/dspy.rb"
 end
