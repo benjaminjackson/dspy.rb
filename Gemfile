@@ -71,3 +71,5 @@ gem "exa-ai-ruby", "~> 1.1"
 
 gem "lf-cli", "~> 1.0"
 gem "reline", "~> 0.5"
+
+gem 'anthropic', git: 'https://github.com/benjaminjackson/anthropic-sdk-ruby', ref: 'e99a9dc6258ff3bedf81f34ee2d05951ba1e8596'
