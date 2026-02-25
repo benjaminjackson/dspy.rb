@@ -2,6 +2,18 @@
 
 require 'spec_helper'
 
+class TestQASignature < DSPy::Signature
+  description "Test signature for span naming"
+
+  input do
+    const :question, String
+  end
+
+  output do
+    const :answer, String
+  end
+end
+
 RSpec.describe 'DSPy::LM span tracking' do
   let(:api_key) { 'test-api-key' }
   let(:lm) { DSPy::LM.new('openai/gpt-4', api_key: api_key) }
@@ -165,6 +177,142 @@ RSpec.describe 'DSPy::LM span tracking' do
       allow(DSPy).to receive(:log).with('span.end', anything)
 
       lm.chat(inference_module, input_values)
+    end
+
+    context 'when observation_naming is :signature' do
+      before do
+        DSPy.configure { |c| c.observation_naming = :signature }
+      end
+
+      after do
+        DSPy.configure { |c| c.observation_naming = :generic }
+      end
+
+      it 'uses the signature class name as the span operation' do
+        mock_response = DSPy::LM::Response.new(
+          content: '{"answer": "42"}',
+          usage: nil,
+          metadata: DSPy::LM::ResponseMetadata.new(
+            provider: 'openai',
+            model: 'gpt-4-0613'
+          )
+        )
+
+        allow(lm.adapter).to receive(:chat).and_return(mock_response)
+
+        prompt_double = double('Prompt')
+        allow(prompt_double).to receive(:render_system_prompt).and_return('Answer the question')
+        allow(prompt_double).to receive(:render_user_prompt).with(anything).and_return('What is life?')
+        allow(prompt_double).to receive(:to_h).and_return({})
+        allow(prompt_double).to receive(:data_format).and_return(:json)
+
+        inference_module = double('inference_module',
+          signature_class: TestQASignature,
+          prompt: prompt_double,
+          system_signature: 'Answer the question',
+          user_signature: 'What is life?',
+          build_prompt_from_inputs: 'What is life?',
+          process_response: { answer: '42' }
+        )
+        allow(inference_module).to receive(:user_signature).with(anything).and_return('What is life?')
+
+        expect(DSPy).to receive(:log).with('span.start', hash_including(
+          operation: 'TestQASignature',
+          'dspy.signature' => 'TestQASignature'
+        ))
+
+        allow(DSPy).to receive(:log).with('span.attributes', anything)
+        allow(DSPy).to receive(:log).with('span.end', anything)
+
+        lm.chat(inference_module, { question: 'What is life?' })
+      end
+
+      it 'still sets dspy.signature attribute' do
+        mock_response = DSPy::LM::Response.new(
+          content: '{"answer": "42"}',
+          usage: nil,
+          metadata: DSPy::LM::ResponseMetadata.new(
+            provider: 'openai',
+            model: 'gpt-4-0613'
+          )
+        )
+
+        allow(lm.adapter).to receive(:chat).and_return(mock_response)
+
+        prompt_double = double('Prompt')
+        allow(prompt_double).to receive(:render_system_prompt).and_return('Answer the question')
+        allow(prompt_double).to receive(:render_user_prompt).with(anything).and_return('What is life?')
+        allow(prompt_double).to receive(:to_h).and_return({})
+        allow(prompt_double).to receive(:data_format).and_return(:json)
+
+        inference_module = double('inference_module',
+          signature_class: TestQASignature,
+          prompt: prompt_double,
+          system_signature: 'Answer the question',
+          user_signature: 'What is life?',
+          build_prompt_from_inputs: 'What is life?',
+          process_response: { answer: '42' }
+        )
+        allow(inference_module).to receive(:user_signature).with(anything).and_return('What is life?')
+
+        logged_attrs = nil
+        allow(DSPy).to receive(:log) do |event, **attrs|
+          logged_attrs = attrs if event == 'span.start'
+        end
+
+        lm.chat(inference_module, { question: 'What is life?' })
+
+        expect(logged_attrs).to include('dspy.signature' => 'TestQASignature')
+      end
+
+      it 'maintains parent-child relationships' do
+        mock_response = DSPy::LM::Response.new(
+          content: '{"answer": "42"}',
+          usage: nil,
+          metadata: DSPy::LM::ResponseMetadata.new(
+            provider: 'openai',
+            model: 'gpt-4-0613'
+          )
+        )
+
+        allow(lm.adapter).to receive(:chat).and_return(mock_response)
+
+        prompt_double = double('Prompt')
+        allow(prompt_double).to receive(:render_system_prompt).and_return('Answer')
+        allow(prompt_double).to receive(:render_user_prompt).with(anything).and_return('Q')
+        allow(prompt_double).to receive(:to_h).and_return({})
+        allow(prompt_double).to receive(:data_format).and_return(:json)
+
+        inference_module = double('inference_module',
+          signature_class: TestQASignature,
+          prompt: prompt_double,
+          system_signature: 'Answer',
+          user_signature: 'Q',
+          build_prompt_from_inputs: 'Q',
+          process_response: { answer: '42' }
+        )
+        allow(inference_module).to receive(:user_signature).with(anything).and_return('Q')
+
+        parent_span_id = nil
+        child_parent_id = nil
+
+        allow(DSPy).to receive(:log) do |event, **attrs|
+          if event == 'span.start'
+            if attrs[:operation] == 'parent.operation'
+              parent_span_id = attrs[:span_id]
+            elsif attrs[:operation] == 'TestQASignature'
+              child_parent_id = attrs[:parent_span_id]
+            end
+          end
+        end
+
+        DSPy::Context.with_span(operation: 'parent.operation') do
+          lm.chat(inference_module, { question: 'Q' })
+        end
+
+        expect(parent_span_id).not_to be_nil
+        expect(child_parent_id).to eq(parent_span_id)
+      end
     end
   end
 end

@@ -29,6 +29,11 @@ module DSPy
     setting :anthropic, default: false  # Reserved for future use
   end
 
+  # Observation naming strategy for Langfuse spans.
+  # :generic (default) — all LLM spans named 'llm.generate'
+  # :signature — span named after the DSPy signature class (e.g. 'FlexibilityEvaluator')
+  setting :observation_naming, default: :generic
+
   def self.logger
     @logger ||= create_logger
   end

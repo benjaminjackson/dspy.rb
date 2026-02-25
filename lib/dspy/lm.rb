@@ -274,9 +274,16 @@ module DSPy
       end
       input_json = input_messages.to_json
       
+      # Use signature class name as span operation when configured
+      operation_name = if DSPy.config.observation_naming == :signature && signature_class_name
+        signature_class_name
+      else
+        'llm.generate'
+      end
+
       # Wrap LLM call in span tracking
       response = DSPy::Context.with_span(
-        operation: 'llm.generate',
+        operation: operation_name,
         **DSPy::ObservationType::Generation.langfuse_attributes,
         'langfuse.observation.input' => input_json,
         'gen_ai.system' => provider,
